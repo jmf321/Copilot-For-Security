@@ -1,0 +1,329 @@
+Descriptor:
+  Name: SoCOpimization
+  DisplayName: SoC Opimization plugin
+  Description: This plugin will enable users to gather metrics related to SoC operations.
+
+SkillGroups:
+  - Format: KQL
+    Skills:
+      - Name: SOC Incident Count by High Severity
+        DisplayName: SOC Incident Count by High Severity
+        Description: Incident Count by High Severity
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident 
+            | where CreatedTime > ago({{days}}d) 
+            | where Severity == 'High'
+            | summarize Count = count_distinct(IncidentNumber)
+      - Name: SOC Incident Count by Medium Severity
+        DisplayName: Incident Count by Medium Severity
+        Description: Incident Count by Medium Severity
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident 
+            | where CreatedTime > ago({{days}}d) 
+            | where Severity == 'Medium'
+            | summarize Count = count_distinct(IncidentNumber)
+      - Name: SOC Incident Count by Low Severity
+        DisplayName: SOC Incident Count by Low Severity
+        Description: Incident Count by Low Severity
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident 
+            | where CreatedTime > ago({{days}}d) 
+            | where Severity == 'Low'
+            | summarize Count = count_distinct(IncidentNumber)
+      - Name: SOC Average time to acknowledge an incident
+        DisplayName: SOC Average time to acknowledge an incident
+        Description: Average time to acknowledge an incident
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where CreatedTime > ago({{days}}d) 
+            | summarize arg_max(LastModifiedTime,*) by IncidentNumber 
+            | extend TimeToAcknowledge =  (FirstModifiedTime - CreatedTime)/1h
+            | summarize Average = avg(TimeToAcknowledge)/60
+      - Name: SOC Average time to closure of an incident
+        DisplayName: SOC Average time to closure of an incident
+        Description: Average time to closure of an incident
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where CreatedTime > ago({{days}}d) 
+            | summarize arg_max(TimeGenerated,*) by IncidentNumber
+            | where Status == 'Closed'
+            | extend TimeToClosure =  (ClosedTime - CreatedTime)/1h
+            | summarize Average = avg(TimeToClosure)
+            
+      - Name: SOC Number of incidents without automation
+        DisplayName: SOC Number of incidents without automation
+        Description: Number of incidents without automation
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where CreatedTime > ago({{days}}d)            
+            | where Status != 'Closed'
+            | where LastModifiedTime != CreatedTime
+            | where ModifiedBy !has 'playbook' and ModifiedBy !has 'automation rule'
+            | extend TimeOpen = datetime_diff('minute', now(), CreatedTime)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | project IncidentNumber, TimeGenerated, TimeOpen, Title, Description, Severity, Status
+            | top 50 by TimeOpen
+            | order by TimeOpen desc
+      - Name: SOC Number of Incidents with Automation Used
+        DisplayName: SOC Number of Incidents with Automation Used
+        Description: Number of Incidents with Automation Used
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where CreatedTime > ago({{days}}d)
+            | where LastModifiedTime != CreatedTime
+            | where ModifiedBy has_any ('playbook', 'automation rule')
+            | summarize arg_max(TimeGenerated, *) by IncidentName
+            | extend TimeOpen = datetime_diff('minute', now(), CreatedTime)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | top 50 by TimeOpen
+            | order by TimeOpen desc
+            | project
+              IncidentNumber,
+              TimeGenerated,
+              TimeOpen,
+              Title,
+              Description,
+              Severity,
+              Status,
+              ProviderName,
+              ModifiedBy
+      - Name: SOC Mean Time to Response with Automation
+        DisplayName: SOC Mean Time to Response with Automation
+        Description: Mean Time to Response with Automation
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where CreatedTime > ago({{days}}d)
+            | where ModifiedBy has_any('playbook', 'automation rule')
+            | where Status == 'Closed'
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber 
+            | extend TimeToClosure =  (ClosedTime - CreatedTime) / 1h
+            | project IncidentNumber, TimeGenerated, TimeToClosure, Title, Description, Severity, Status, Classification, ClassificationComment
+            | top 50 by TimeToClosure
+            | order by TimeToClosure desc
+      - Name: SOC Time to Acknowledge per Incident
+        DisplayName: SOC Time to Acknowledge per Incident
+        Description: Time to Acknowledge per Incident
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where CreatedTime > ago({{days}}d)
+            | where ModifiedBy !has 'playbook' and ModifiedBy !has 'automation rule'
+            | summarize arg_max(LastModifiedTime, *) by IncidentNumber 
+            | extend
+            TimeToAcknowledge =  (FirstModifiedTime - CreatedTime) / 1h,
+            TimeOpen = datetime_diff('minute', now(), CreatedTime)
+            | project
+             IncidentNumber, TimeGenerated, TimeOpen, TimeToAcknowledge, Title, Description, Severity, Status
+            | top 50 by TimeToAcknowledge
+            | order by TimeToAcknowledge desc
+      - Name: SOC Average Time to Closure
+        DisplayName: SOC Average Time to Closure
+        Description: Average Time to Closure
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | where CreatedTime > ago({{days}}d)
+            | where Status == 'Closed'
+            | where ModifiedBy !has 'playbook'
+            | extend TimeToClosure = (ClosedTime - CreatedTime) / 1h
+            | project IncidentNumber, TimeGenerated, TimeToClosure, Title,Description, Severity, Status
+            | top 50 by TimeToClosure
+            | order by TimeToClosure desc
+      - Name: SOC Mean Time to Respond without Automation
+        DisplayName: SOC Mean Time to Respond without Automation
+        Description: Mean Time to Respond without Automation
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where Status == 'Closed'
+            | where ModifiedBy !has 'playbook'
+            | where CreatedTime > ago({{days}}d)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber 
+            | extend TimeToClosure = (ClosedTime - CreatedTime) / 1h
+            | project IncidentNumber, TimeGenerated, TimeToClosure, Title, Description, Severity, Status, Classification
+            | order by TimeToClosure desc
+      - Name: SOC Mean Time to Response with Tasks
+        DisplayName: SOC Mean Time to Response with Tasks
+        Description: Mean Time to Response with Tasks
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where Status == 'Closed'
+            | where Tasks != '[]'
+            | where CreatedTime > ago({{days}}d)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber 
+            | extend TimeToClosure = (ClosedTime - CreatedTime) / 1h
+            | project IncidentNumber, TimeGenerated, TimeToClosure, Title, Description, Status, Classification, ClassificationComment, ClassificationReason
+      - Name: SOC Highest Mean Time to Respond
+        DisplayName: SOC Highest Mean Time to Respond
+        Description: Highest Mean Time to Respond
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where Status == 'Closed'
+            | where CreatedTime > ago({{days}}d)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber 
+            | extend TimeToClosure =  (ClosedTime - CreatedTime) / 1h
+            | project IncidentNumber, TimeGenerated, TimeToClosure, Title, Description, Severity, Status, Classification, ClassificationComment
+            | order by TimeToClosure desc
+            | top 10 by TimeToClosure
+      - Name: SOC Closing Classification over Time
+        DisplayName: SOC Closing Classification over Time
+        Description: Closing Classification over Time
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where Status == 'Closed'
+            | where CreatedTime > ago({{days}}d)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | summarize Count = count() by Classification, Title, ProviderName, bin (TimeGenerated, 1d)
+            | evaluate pivot(Classification, count(), Title, TimeGenerated)
+            | order by TimeGenerated desc
+      - Name: SOC Alerts Over Time per Severity by Provider
+        DisplayName: SOC Alerts Over Time per Severity by Provider
+        Description: Alerts Over Time per Severity by Provider
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityAlert
+            | where TimeGenerated > ago({{days}}d)
+            | summarize arg_max(TimeGenerated, *) by SystemAlertId
+            | summarize by ProviderName, AlertSeverity, bin(TimeGenerated, 1d), SystemAlertId
+            | evaluate pivot(AlertSeverity, count(), ProviderName)
+            | order by ProviderName asc
+            | project-reorder ProviderName, High, Medium, Low, Informational
+      - Name: SOC Alerts Over Time per Severity by Tactics
+        DisplayName: SOC Alerts Over Time per Severity by Tactics
+        Description: Alerts Over Time per Severity by Tactics
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityAlert 
+            | where TimeGenerated > ago({{days}}d)
+            | extend Tactics = split(Tactics, ",")
+            | extend Tactics = replace_string(tostring(Tactics), " ", "")
+            | mvexpand todynamic(Tactics)
+            | summarize arg_max(TimeGenerated, *) by SystemAlertId
+            | summarize by tostring(Tactics), AlertSeverity, bin(TimeGenerated, 1d), SystemAlertId
+            | evaluate pivot(AlertSeverity, count(), Tactics)
+            | order by Tactics asc
+            | project-reorder Tactics, High, Medium, Low, Informational
+      - Name: SOC Incidents Over Time by Severity
+        DisplayName: SOC Incidents Over Time by Severity 
+        Description: Incidents Over Time by Severity
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident 
+            | where TimeGenerated > ago({{days}}d)
+            | summarize arg_max(TimeGenerated, *) by IncidentName 
+            | summarize by ProviderName, Severity, bin(TimeGenerated, 1d), IncidentName 
+            | evaluate pivot(Severity, count(), ProviderName) 
+            | order by ProviderName asc
+            | project-reorder ProviderName, High, Medium, Low, Informational
+      - Name: SOC Total Incidents Owned per User
+        DisplayName: SOC Total Incidents Owned per User
+        Description: Total Incidents Owned per User
+        Inputs:
+          - Name: days
+            Description: Look back x amount of days
+            Required: true
+        Settings:
+          Target: Defender
+          Template: |-
+            SecurityIncident
+            | where TimeGenerated > ago({{days}}d)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | summarize IncidentsOwned = count() by Owner = tostring(Owner.userPrincipalName)
+            | extend Owner = iff(isempty(Owner), 'Unassigned', Owner)
